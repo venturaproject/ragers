@@ -11,7 +11,7 @@ import {
   IconUsers,
 } from '@tabler/icons-react'
 import { type SidebarData } from '../types'
-import FilersLogo from '../filers-logo'
+import RagersLogo from '../ragers-logo'
 import { useI18n } from '@/i18n/context'
 
 export const DynamicSidebarData = () => {
@@ -21,7 +21,7 @@ export const DynamicSidebarData = () => {
     teams: [
       {
         name: 'RAG API',
-        logo: FilersLogo,
+        logo: RagersLogo,
         plan: 'Retrieval-Augmented Generation',
       },
     ],
@@ -46,7 +46,7 @@ export const DynamicSidebarData = () => {
             permission: 'files.process',
           },
           {
-            title: 'Preguntar',
+            title: 'Chat RAG',
             url: '/admin/rag/ask',
             icon: IconSparkles,
             permission: 'files.process',

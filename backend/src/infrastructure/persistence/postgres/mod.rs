@@ -15,6 +15,7 @@ use crate::domain::rbac::{
 };
 
 pub mod api_client_repository;
+pub mod chat_repository;
 pub mod job_repository;
 pub mod rag_repository;
 pub mod rbac_repository;
@@ -22,6 +23,7 @@ pub mod session_repository;
 pub mod user_repository;
 
 pub use api_client_repository::{PgApiClientRepository, PgClientTokenRepository};
+pub use chat_repository::{PgChatMessageRepository, PgChatThreadRepository};
 pub use job_repository::PgJobRepository;
 pub use rag_repository::{PgChunkRepository, PgDocumentRepository};
 pub use rbac_repository::{PgPermissionRepository, PgRoleRepository};

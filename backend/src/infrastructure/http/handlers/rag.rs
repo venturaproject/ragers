@@ -46,7 +46,8 @@ async fn owned_document(
     Ok(doc)
 }
 
-/// POST /api/rag/documents  (multipart: `file`, a PDF)
+/// POST /api/rag/documents  (multipart: `file`, a PDF; optional `redact_pii`
+/// field — "true"/"1" — to strip recognised PII before it's chunked/embedded)
 #[utoipa::path(
     post, path = "/api/rag/documents", tag = "rag",
     request_body(content = crate::infrastructure::http::openapi::UploadForm, content_type = "multipart/form-data"),
@@ -81,15 +82,26 @@ pub async fn ingest(
         .ok_or_else(|| AppError::BadRequest("missing `file` field".into()))?;
     let filename = fname.to_string();
     let bytes = bytes.to_vec();
+    let redact_pii = mp
+        .field_string("redact_pii")
+        .is_some_and(|v| matches!(v.trim().to_lowercase().as_str(), "1" | "true" | "yes"));
 
     let doc = Document::new(principal.owner_key(), filename.clone());
     state.documents.create(doc.clone()).await?;
 
     let started = Instant::now();
-    let result = service::ingest_pdf(engine, &state.documents, &state.chunks, doc, &bytes).await;
+    let result = service::ingest_pdf(
+        engine,
+        &state.documents,
+        &state.chunks,
+        doc,
+        &bytes,
+        redact_pii,
+    )
+    .await;
 
     let (outcome, tokens) = match &result {
-        Ok((doc, tokens)) => (
+        Ok((doc, tokens, _redacted)) => (
             Ok((doc.chunk_count as u64, 0u32, elapsed(started))),
             *tokens,
         ),
@@ -100,8 +112,10 @@ pub async fn ingest(
         record_ai_usage(&state, &principal, tokens as u64).await;
     }
 
-    let (doc, _) = result?;
-    Ok(Json(doc.to_json()))
+    let (doc, _tokens, redacted_count) = result?;
+    let mut json = doc.to_json();
+    json["pii_redacted"] = serde_json::json!(redacted_count);
+    Ok(Json(json))
 }
 
 fn elapsed(started: Instant) -> Timings {
@@ -300,5 +314,151 @@ pub async fn query(
                 score: s.score,
             })
             .collect(),
+    }))
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct ErpSyncItem {
+    pub title: String,
+    pub status: String,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct ErpSyncResult {
+    pub ingested: u32,
+    pub failed: u32,
+    pub pii_redacted: u64,
+    pub items: Vec<ErpSyncItem>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SyncErpQuery {
+    /// Strip recognised PII (emails, IDs, cards, phone numbers) from each
+    /// record's text before it's chunked/embedded. Off by default.
+    #[serde(default)]
+    pub redact_pii: bool,
+}
+
+/// POST /api/rag/sync/erp — pull products + orders from the external
+/// ERP/CRM database (`ERP_DATABASE_URL`) and ingest each as a RAG document,
+/// through the same chunk/embed/store pipeline as an uploaded PDF.
+///
+/// Idempotent by `title`: a record that was already ingested by a previous
+/// sync has its old document (and vectors/chunks) deleted first, then
+/// re-ingested fresh — re-running the sync updates in place instead of
+/// piling up duplicate documents that would otherwise dilute retrieval
+/// scores (and burn embedding tokens) a little more on every click.
+#[utoipa::path(
+    post, path = "/api/rag/sync/erp", tag = "rag",
+    responses(
+        (status = 200, description = "Sync summary: how many ERP records were ingested", body = ErpSyncResult),
+        (status = 401, description = "Missing or invalid credentials"),
+        (status = 403, description = "Token lacks the `rag:ingest` scope"),
+        (status = 503, description = "RAG or the ERP source is not configured on this server"),
+    ),
+    security(("api_key" = []), ("bearer" = [])),
+)]
+
+pub async fn sync_erp(
+    State(state): State<Arc<AppState>>,
+    principal: ApiPrincipal,
+    Query(q): Query<SyncErpQuery>,
+) -> AppResult<Json<ErpSyncResult>> {
+    authorize(&state, &principal, "rag:ingest", true).await?;
+    let Some(engine) = state.rag.as_ref() else {
+        return Err(AppError::ServiceUnavailable(
+            "RAG is not configured on this server".into(),
+        ));
+    };
+    let Some(erp_pool) = state.erp_pool.as_ref() else {
+        return Err(AppError::ServiceUnavailable(
+            "No ERP_DATABASE_URL configured on this server".into(),
+        ));
+    };
+    check_ai_quota(&state, &principal).await?;
+
+    let mut records = crate::application::rag::erp_sync::fetch_products(erp_pool).await?;
+    if let Some(catalog) = crate::application::rag::erp_sync::fetch_catalog_summary(erp_pool).await? {
+        records.push(catalog);
+    }
+    records.extend(crate::application::rag::erp_sync::fetch_orders(erp_pool).await?);
+
+    // Existing documents from a prior sync, keyed by filename, so a record
+    // that was already ingested gets replaced rather than duplicated.
+    let existing = state.documents.list(principal.owner_key().as_deref()).await?;
+    let existing_by_title: std::collections::HashMap<String, Uuid> = existing
+        .into_iter()
+        .map(|d| (d.filename.clone(), d.id))
+        .collect();
+
+    let mut ingested = 0u32;
+    let mut failed = 0u32;
+    let mut items = Vec::with_capacity(records.len());
+    let mut total_tokens: u64 = 0;
+    let mut total_redacted: u64 = 0;
+
+    for record in records {
+        if let Some(&old_id) = existing_by_title.get(&record.title) {
+            engine.vector_store.delete_document(old_id).await?;
+            state.chunks.delete_for_document(old_id).await?;
+            state.documents.delete(old_id).await?;
+        }
+
+        let doc = Document::new(principal.owner_key(), record.title.clone());
+        state.documents.create(doc.clone()).await?;
+
+        let started = Instant::now();
+        let result = service::ingest_text(
+            engine,
+            &state.documents,
+            &state.chunks,
+            doc,
+            &record.text,
+            1,
+            q.redact_pii,
+        )
+        .await;
+
+        let (outcome, tokens) = match &result {
+            Ok((doc, tokens, _redacted)) => (
+                Ok((doc.chunk_count as u64, 0u32, elapsed(started))),
+                *tokens,
+            ),
+            Err(e) => (Err((e.to_string(), started.elapsed().as_millis())), 0),
+        };
+        trace_sync(&state, record.title.clone(), "rag_erp_sync", &principal, outcome).await;
+
+        match result {
+            Ok((_, _, redacted)) => {
+                ingested += 1;
+                total_tokens += tokens as u64;
+                total_redacted += redacted as u64;
+                items.push(ErpSyncItem {
+                    title: record.title,
+                    status: "ready".into(),
+                    error: None,
+                });
+            }
+            Err(e) => {
+                failed += 1;
+                items.push(ErpSyncItem {
+                    title: record.title,
+                    status: "failed".into(),
+                    error: Some(e.to_string()),
+                });
+            }
+        }
+    }
+
+    if total_tokens > 0 {
+        record_ai_usage(&state, &principal, total_tokens).await;
+    }
+
+    Ok(Json(ErpSyncResult {
+        ingested,
+        failed,
+        pii_redacted: total_redacted,
+        items,
     }))
 }

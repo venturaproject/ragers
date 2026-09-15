@@ -11,13 +11,13 @@ import {
   IconNotification,
 } from '@tabler/icons-react'
 import { type SidebarData } from '../types'
-import FilersLogo from '../filers-logo'
+import RagersLogo from '../ragers-logo'
 
 export const sidebarData: SidebarData = {
   teams: [
     {
       name: 'RAG API',
-      logo: FilersLogo,
+      logo: RagersLogo,
       plan: 'Retrieval-Augmented Generation',
     },
   ],
@@ -42,7 +42,7 @@ export const sidebarData: SidebarData = {
           permission: 'files.process',
         },
         {
-          title: 'Preguntar',
+          title: 'Chat RAG',
           url: '/admin/rag/ask',
           icon: IconSparkles,
           permission: 'files.process',

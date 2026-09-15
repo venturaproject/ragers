@@ -58,5 +58,11 @@ export const endpoints = {
     documents:       `/api/rag/documents`,
     documentDetail:  (id: string) => `/api/rag/documents/${id}`,
     query:           `/api/rag/query`,
+    syncErp:         `/api/rag/sync/erp`,
+  },
+  chat: {
+    threads:       `/api/chat/threads`,
+    threadDetail:  (id: string) => `/api/chat/threads/${id}`,
+    messages:      (id: string) => `/api/chat/threads/${id}/messages`,
   },
 }

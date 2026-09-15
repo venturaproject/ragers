@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useTheme } from '@/context/theme-context';
 
-const FilersLogo = ({ className = '', isCollapsed = false }) => {
+const RagersLogo = ({ className = '', isCollapsed = false }) => {
   const { theme } = useTheme();
 
   const getLogoSrc = (currentTheme: string, collapsed: boolean) => {
@@ -11,8 +11,8 @@ const FilersLogo = ({ className = '', isCollapsed = false }) => {
     }
     const isDark = effective === 'dark';
     return collapsed
-      ? (isDark ? '/logo-filers-compact-dark.svg' : '/logo-filers-compact-light.svg')
-      : (isDark ? '/logo-filers-dark.svg' : '/logo-filers-light.svg');
+      ? (isDark ? '/logo-ragers-compact-dark.svg' : '/logo-ragers-compact-light.svg')
+      : (isDark ? '/logo-ragers-dark.svg' : '/logo-ragers-light.svg');
   };
 
   const [logoSrc, setLogoSrc] = useState(() => getLogoSrc(theme, isCollapsed));
@@ -24,10 +24,10 @@ const FilersLogo = ({ className = '', isCollapsed = false }) => {
   return (
     <img
       src={logoSrc}
-      alt="Filers"
+      alt="Ragers"
       className={`${isCollapsed ? 'h-10 w-auto max-w-[48px]' : 'h-9 w-auto max-w-full'} ${className}`}
     />
   );
 };
 
-export default FilersLogo;
+export default RagersLogo;

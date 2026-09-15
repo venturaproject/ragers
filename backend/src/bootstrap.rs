@@ -22,6 +22,7 @@ use crate::{
             entities::{Role, User, UserStatus},
             repository::{SessionRepository, UserRepository},
         },
+        chat::repository::{ChatMessageRepository, ChatThreadRepository},
         processing::repository::JobRepository,
         rag::repository::{ChunkRepository, DocumentRepository},
         rbac::{
@@ -34,6 +35,7 @@ use crate::{
         persistence::{
             memory::{
                 api_client_repository::{MemoryApiClientRepository, MemoryClientTokenRepository},
+                chat_repository::{MemoryChatMessageRepository, MemoryChatThreadRepository},
                 job_repository::MemoryJobRepository,
                 rag_repository::{MemoryChunkRepository, MemoryDocumentRepository},
                 rbac_repository::{MemoryPermissionRepository, MemoryRoleRepository},
@@ -55,6 +57,8 @@ struct Stores {
     jobs: Arc<dyn JobRepository>,
     documents: Arc<dyn DocumentRepository>,
     chunks: Arc<dyn ChunkRepository>,
+    chat_threads: Arc<dyn ChatThreadRepository>,
+    chat_messages: Arc<dyn ChatMessageRepository>,
     roles: Arc<dyn RoleRepository>,
     permissions: Arc<dyn PermissionRepository>,
     /// The Postgres pool when persistence is on; `None` for in-memory.
@@ -83,6 +87,8 @@ fn memory_stores(config: &Config) -> Stores {
         jobs: Arc::new(MemoryJobRepository::new()),
         documents: Arc::new(MemoryDocumentRepository::new()),
         chunks: Arc::new(MemoryChunkRepository::new()),
+        chat_threads: Arc::new(MemoryChatThreadRepository::new()),
+        chat_messages: Arc::new(MemoryChatMessageRepository::new()),
         roles,
         permissions,
         db_pool: None,
@@ -119,21 +125,46 @@ async fn connect_redis(url: Option<&str>) -> Option<redis::aio::ConnectionManage
 /// Used by the test suite and as the fallback when `DATABASE_URL` is unset.
 pub fn build_state(config: Config) -> Arc<AppState> {
     let stores = memory_stores(&config);
-    assemble_state(config, stores, None, None)
+    assemble_state(config, stores, None, None, None)
+}
+
+/// Connect the external ERP/CRM Postgres pool when `ERP_DATABASE_URL` is set.
+/// Unlike this service's own `DATABASE_URL`, an unreachable ERP source is
+/// non-fatal — it's an optional integration (`POST /api/rag/sync/erp` simply
+/// answers 503), not core to the API the way Qdrant is.
+async fn connect_erp(url: Option<&str>) -> Option<sqlx::PgPool> {
+    let url = url?;
+    match sqlx::postgres::PgPoolOptions::new()
+        .max_connections(5)
+        .acquire_timeout(std::time::Duration::from_secs(5))
+        .connect(url)
+        .await
+    {
+        Ok(pool) => {
+            tracing::info!("ERP sync source: connected");
+            Some(pool)
+        }
+        Err(e) => {
+            tracing::error!("ERP_DATABASE_URL is set but the connection failed ({e}) — /api/rag/sync/erp will answer 503");
+            None
+        }
+    }
 }
 
 /// Build the application state, using Postgres for the auth-critical stores
 /// (+ RAG document/chunk metadata) when `DATABASE_URL` is set, Redis for the
-/// rate limiters when `REDIS_URL` is set, and connecting to Qdrant when
+/// rate limiters when `REDIS_URL` is set, connecting to Qdrant when
 /// `LLM_API_KEY` is set (an unreachable Qdrant at that point fails startup —
-/// it's core to this service, not an optional integration).
+/// it's core to this service, not an optional integration), and connecting
+/// to the ERP source when `ERP_DATABASE_URL` is set (non-fatal).
 pub async fn build_state_async(config: Config) -> anyhow::Result<Arc<AppState>> {
     let redis = connect_redis(config.redis_url.as_deref()).await;
     let rag = RagEngine::from_config(&config).await?;
+    let erp_pool = connect_erp(config.erp_database_url.as_deref()).await;
 
     let Some(url) = config.database_url.clone() else {
         let stores = memory_stores(&config);
-        return Ok(assemble_state(config, stores, redis, rag));
+        return Ok(assemble_state(config, stores, redis, rag, erp_pool));
     };
 
     let pool = postgres::connect(&url).await?;
@@ -160,23 +191,26 @@ pub async fn build_state_async(config: Config) -> anyhow::Result<Arc<AppState>> 
         jobs,
         documents: Arc::new(postgres::PgDocumentRepository::new(pool.clone())),
         chunks: Arc::new(postgres::PgChunkRepository::new(pool.clone())),
+        chat_threads: Arc::new(postgres::PgChatThreadRepository::new(pool.clone())),
+        chat_messages: Arc::new(postgres::PgChatMessageRepository::new(pool.clone())),
         roles,
         permissions,
         db_pool: Some(pool),
     };
     tracing::info!("persistence: Postgres");
-    Ok(assemble_state(config, stores, redis, rag))
+    Ok(assemble_state(config, stores, redis, rag, erp_pool))
 }
 
 /// Everything downstream of the swappable repos: the services and the rate
-/// limiters (Redis-backed when `redis` is `Some`). `rag` is computed by the
-/// (async) caller since connecting to Qdrant can't happen in this sync
-/// function — see [`build_state`] / [`build_state_async`].
+/// limiters (Redis-backed when `redis` is `Some`). `rag` and `erp_pool` are
+/// computed by the (async) caller since connecting to Qdrant/the ERP source
+/// can't happen in this sync function — see [`build_state`] / [`build_state_async`].
 fn assemble_state(
     config: Config,
     stores: Stores,
     redis: Option<redis::aio::ConnectionManager>,
     rag: Option<RagEngine>,
+    erp_pool: Option<sqlx::PgPool>,
 ) -> Arc<AppState> {
     let auth = Arc::new(AuthService::new(stores.users, stores.sessions));
     let api_clients = Arc::new(ApiClientService::new(
@@ -204,6 +238,8 @@ fn assemble_state(
         jobs: stores.jobs,
         documents: stores.documents,
         chunks: stores.chunks,
+        chat_threads: stores.chat_threads,
+        chat_messages: stores.chat_messages,
         auth,
         roles: stores.roles,
         permissions: stores.permissions,
@@ -212,6 +248,7 @@ fn assemble_state(
         api_limiter,
         db_pool: stores.db_pool,
         rag,
+        erp_pool,
     })
 }
 
@@ -337,5 +374,6 @@ pub fn test_config() -> Config {
         chunk_size_chars: 1200,
         chunk_overlap_chars: 150,
         rag_top_k: 5,
+        erp_database_url: None,
     }
 }

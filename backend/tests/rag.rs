@@ -76,3 +76,22 @@ async fn documents_list_requires_authentication() {
         StatusCode::UNAUTHORIZED
     );
 }
+
+#[tokio::test]
+async fn erp_sync_requires_authentication() {
+    let mut app = TestApp::new();
+    assert_eq!(
+        app.post_empty("/api/rag/sync/erp").await.status,
+        StatusCode::UNAUTHORIZED
+    );
+}
+
+#[tokio::test]
+async fn erp_sync_is_unavailable_without_configuration() {
+    let mut app = TestApp::new();
+    // Neither LLM_API_KEY nor ERP_DATABASE_URL is set in the test harness —
+    // the RAG-not-configured check runs first (same order as `ingest`/`query`).
+    let res = app.post_json_key("/api/rag/sync/erp", "test-key", json!({})).await;
+    assert_eq!(res.status, StatusCode::SERVICE_UNAVAILABLE);
+    assert!(res.text().to_lowercase().contains("not configured"));
+}

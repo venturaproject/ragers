@@ -62,6 +62,32 @@ services:
       timeout: 3s
       retries: 10
 
+  # Stand-in for an external ERP/CRM database the API does NOT own — separate
+  # credentials/volume/network identity from the bundled `postgres` above, on
+  # purpose, so POST /api/rag/sync/erp exercises the same read-only-external-
+  # source pattern a real integration would. Seeded once from
+  # infrastructure/erp-db/init.sql (products/orders for a fictitious "Mayor
+  # S.A." distributor); re-seeds only if the erp-db-data volume is fresh.
+  erp-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: erp
+      POSTGRES_PASSWORD: erp
+      POSTGRES_DB: erp_crm
+    volumes:
+      - ./infrastructure/erp-db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - erp-db-data:/var/lib/postgresql/data
+    expose:
+      - "5432"
+    # Uncomment to poke at it directly (e.g. `psql`, a GUI):
+    # ports:
+    #   - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U erp -d erp_crm"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   api:
     build:
       context: ./backend
@@ -72,6 +98,8 @@ services:
       redis:
         condition: service_healthy
       qdrant:
+        condition: service_healthy
+      erp-db:
         condition: service_healthy
     # Only watch the Rust sources — not frontend/, uploads/, etc.
     command: cargo watch -w src -w Cargo.toml -w Cargo.lock -x run
@@ -91,6 +119,8 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgres://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:-rag}@postgres:5432/${POSTGRES_DB:-rag}}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       QDRANT_URL: ${QDRANT_URL:-http://qdrant:6334}
+      # The simulated external ERP/CRM — POST /api/rag/sync/erp reads from it.
+      ERP_DATABASE_URL: ${ERP_DATABASE_URL:-postgres://erp:erp@erp-db:5432/erp_crm}
 
   frontend:
     build:
@@ -106,7 +136,7 @@ services:
     # ports:
     #   - "5173:5173"
     environment:
-      VITE_APP_NAME: ${VITE_APP_NAME:-RAG API}
+      VITE_APP_NAME: ${VITE_APP_NAME:-Ragers}
       VITE_APP_URL: ${VITE_APP_URL:-http://localhost:8085}
 
 volumes:
@@ -115,3 +145,4 @@ volumes:
   frontend_modules:
   postgres-data:
   qdrant-data:
+  erp-db-data:

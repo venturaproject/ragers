@@ -72,6 +72,12 @@ pub struct Config {
     pub chunk_overlap_chars: usize,
     /// Default `top_k` for `/api/rag/query` when a caller doesn't set one.
     pub rag_top_k: u64,
+    /// Connection string for an external ERP/CRM-style Postgres database that
+    /// `POST /api/rag/sync/erp` reads products/orders from and ingests into
+    /// the RAG index — a separate system from [`Config::database_url`] (this
+    /// service's own persistence), simulating pulling knowledge from a
+    /// system the API doesn't own. `None` ⇒ the sync route answers 503.
+    pub erp_database_url: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -215,7 +221,11 @@ impl Config {
                 .ok()
                 .and_then(|v| v.trim().parse().ok())
                 .filter(|n| *n > 0)
-                .unwrap_or(5),
+                .unwrap_or(8),
+            erp_database_url: env::var("ERP_DATABASE_URL")
+                .ok()
+                .map(|v| v.trim().to_string())
+                .filter(|s| !s.is_empty()),
         }
     }
 
@@ -359,6 +369,7 @@ mod tests {
             chunk_size_chars: 1200,
             chunk_overlap_chars: 150,
             rag_top_k: 5,
+            erp_database_url: None,
         }
     }
 

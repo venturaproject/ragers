@@ -23,13 +23,17 @@ import {
   AlertCircle,
   CheckCircle2,
   CircleDashed,
+  Database,
   FileText,
   Loader2,
+  RefreshCw,
+  ShieldCheck,
   Trash2,
   Upload,
   XCircle,
 } from 'lucide-react'
 import { FileDropzone } from '@/components/file-dropzone'
+import { Checkbox } from '@/components/ui/checkbox'
 import { ragApi, type DocumentStatus, type RagDocument } from '@/services/rag-api'
 import { toast } from 'sonner'
 
@@ -86,6 +90,8 @@ const IN_FLIGHT: DocumentStatus[] = ['pending', 'chunking', 'embedding']
  */
 export default function DocumentsPage() {
   const [files, setFiles] = useState<File[]>([])
+  const [redactPii, setRedactPii] = useState(false)
+  const [redactPiiErp, setRedactPiiErp] = useState(false)
   const queryClient = useQueryClient()
 
   const listQuery = useQuery({
@@ -96,10 +102,13 @@ export default function DocumentsPage() {
   })
 
   const ingest = useMutation({
-    mutationFn: () => ragApi.ingest(files[0] as File),
-    onSuccess: () => {
+    mutationFn: () => ragApi.ingest(files[0] as File, redactPii),
+    onSuccess: (doc) => {
       setFiles([])
       queryClient.invalidateQueries({ queryKey: ['rag-documents'] })
+      if (doc.pii_redacted) {
+        toast.success(`Documento indexado — ${doc.pii_redacted} dato(s) de PII redactados`)
+      }
     },
     onError: () => toast.error('No se pudo ingerir el documento.'),
   })
@@ -111,6 +120,27 @@ export default function DocumentsPage() {
       toast.success('Documento eliminado')
     },
     onError: () => toast.error('No se pudo eliminar el documento.'),
+  })
+
+  const syncErp = useMutation({
+    mutationFn: () => ragApi.syncErp(redactPiiErp),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['rag-documents'] })
+      const piiSuffix = result.pii_redacted > 0 ? `, ${result.pii_redacted} dato(s) de PII redactados` : ''
+      if (result.failed > 0) {
+        toast.warning(`ERP sincronizado: ${result.ingested} ok, ${result.failed} fallidos${piiSuffix}`)
+      } else {
+        toast.success(`ERP sincronizado: ${result.ingested} documento(s) indexados${piiSuffix}`)
+      }
+    },
+    onError: (error) => {
+      const err = error as { response?: { status?: number; data?: { error?: string } } }
+      toast.error(
+        err?.response?.status === 503
+          ? 'El ERP/CRM externo no está configurado en este servidor (falta ERP_DATABASE_URL).'
+          : (err?.response?.data?.error ?? 'No se pudo sincronizar con el ERP.'),
+      )
+    },
   })
 
   const docs: RagDocument[] = listQuery.data ?? []
@@ -146,6 +176,22 @@ export default function DocumentsPage() {
                 hint="PDF (con texto — no escaneado)"
                 disabled={ingest.isPending}
               />
+              <label className="flex items-start gap-2 text-sm text-muted-foreground">
+                <Checkbox
+                  checked={redactPii}
+                  onCheckedChange={(v) => setRedactPii(v === true)}
+                  disabled={ingest.isPending}
+                  className="mt-0.5"
+                />
+                <span>
+                  <span className="flex items-center gap-1.5 font-medium text-foreground">
+                    <ShieldCheck className="h-3.5 w-3.5" /> Redactar PII antes de indexar
+                  </span>
+                  Quita emails, DNI/NIE, IBAN, tarjetas y teléfonos reconocidos antes de que el
+                  texto salga a NVIDIA — best-effort, no una garantía de compliance. Si después
+                  necesitás preguntar por esos datos exactos, la respuesta ya no va a estar.
+                </span>
+              </label>
               <Button
                 onClick={() => files[0] && ingest.mutate()}
                 disabled={!files[0] || ingest.isPending}
@@ -172,6 +218,49 @@ export default function DocumentsPage() {
               </span>
             </div>
           )}
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Database className="h-4 w-4 text-primary" />
+                Fuente externa: ERP/CRM
+              </CardTitle>
+              <CardDescription>
+                Trae productos y pedidos desde la base de datos del ERP/CRM (un sistema que esta
+                API no posee) y los indexa igual que un PDF. Cada sincronización reingesta todo
+                como documentos nuevos — pensado para una sync puntual o periódica, no para
+                ejecutarse a alta frecuencia.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <label className="flex items-start gap-2 text-sm text-muted-foreground">
+                <Checkbox
+                  checked={redactPiiErp}
+                  onCheckedChange={(v) => setRedactPiiErp(v === true)}
+                  disabled={syncErp.isPending}
+                  className="mt-0.5"
+                />
+                <span>
+                  <span className="flex items-center gap-1.5 font-medium text-foreground">
+                    <ShieldCheck className="h-3.5 w-3.5" /> Redactar PII antes de indexar
+                  </span>
+                  Misma redacción best-effort aplicada a cada producto/pedido antes de embeder.
+                </span>
+              </label>
+              <Button
+                variant="outline"
+                onClick={() => syncErp.mutate()}
+                disabled={syncErp.isPending}
+                className="gap-2"
+              >
+                {syncErp.isPending ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" /> Sincronizando…</>
+                ) : (
+                  <><RefreshCw className="h-4 w-4" /> Sincronizar ERP</>
+                )}
+              </Button>
+            </CardContent>
+          </Card>
 
           <Card>
             <CardHeader>

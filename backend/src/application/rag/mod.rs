@@ -5,6 +5,8 @@
 pub mod answer;
 pub mod chunker;
 pub mod embeddings;
+pub mod erp_sync;
+pub mod pii;
 pub mod service;
 pub mod vector_store;
 

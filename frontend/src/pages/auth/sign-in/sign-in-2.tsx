@@ -1,4 +1,4 @@
-const FilersLogo = '/logo-filers-icon.svg'
+const RagersLogo = '/logo-ragers-icon.svg'
 import { DocumentTitle } from '@/components/document-title'
 import { UserAuthForm } from './components/user-auth-form'
 import { useI18n } from '@/i18n/context'
@@ -24,11 +24,11 @@ export default function SignIn2({
           </div>
 
           <img
-            src={FilersLogo}
+            src={RagersLogo}
             className='relative m-auto'
             width={301}
             height={301}
-            alt='Filers'
+            alt='Ragers'
           />
 
           <div className='relative z-20 mt-auto'>

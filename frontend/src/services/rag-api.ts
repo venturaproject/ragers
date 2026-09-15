@@ -23,6 +23,8 @@ export interface RagDocument {
   error: string | null
   created_at: string
   updated_at: string
+  /** Only present right after ingest: how many PII matches were redacted. */
+  pii_redacted?: number
 }
 
 export interface RagDocumentDetail extends RagDocument {
@@ -47,11 +49,30 @@ export interface QueryResult {
   sources: QuerySource[]
 }
 
+export interface ErpSyncItem {
+  title: string
+  status: 'ready' | 'failed'
+  error: string | null
+}
+
+export interface ErpSyncResult {
+  ingested: number
+  failed: number
+  pii_redacted: number
+  items: ErpSyncItem[]
+}
+
 export const ragApi = {
-  /** POST /api/rag/documents — ingest a PDF: extract, chunk, embed, index. */
-  ingest(file: File): Promise<RagDocument> {
+  /**
+   * POST /api/rag/documents — ingest a PDF: extract, chunk, embed, index.
+   * `redactPii`: strip recognised PII (emails, IDs, cards, phone numbers)
+   * before the text is chunked/embedded — off by default, since it's lossy
+   * (a redacted value can no longer be asked about later).
+   */
+  ingest(file: File, redactPii?: boolean): Promise<RagDocument> {
     const form = new FormData()
     form.append('file', file)
+    if (redactPii) form.append('redact_pii', 'true')
     return axios
       .post<RagDocument>(endpoints.rag.documents, form, MULTIPART)
       .then((r) => r.data)
@@ -70,11 +91,24 @@ export const ragApi = {
   },
 
   /** POST /api/rag/query — ask a question, answered strictly from what's indexed. */
-  query(question: string, documentIds?: string[]): Promise<QueryResult> {
+  query(question: string, documentIds?: string[], topK?: number): Promise<QueryResult> {
     return axios
       .post<QueryResult>(endpoints.rag.query, {
         question,
         document_ids: documentIds?.length ? documentIds : undefined,
+        top_k: topK,
+      })
+      .then((r) => r.data)
+  },
+
+  /**
+   * POST /api/rag/sync/erp — pull products + orders from the external
+   * ERP/CRM database and ingest each as a document, same pipeline as a PDF.
+   */
+  syncErp(redactPii?: boolean): Promise<ErpSyncResult> {
+    return axios
+      .post<ErpSyncResult>(endpoints.rag.syncErp, undefined, {
+        params: redactPii ? { redact_pii: true } : undefined,
       })
       .then((r) => r.data)
   },

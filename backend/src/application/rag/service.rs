@@ -18,31 +18,33 @@ use crate::{
     errors::{AppError, AppResult},
 };
 
-use super::{RagEngine, answer, chunker::chunk_text, embeddings::InputType};
+use super::{RagEngine, answer, chunker::chunk_text, embeddings::InputType, pii};
+
+async fn fail(
+    documents: &Arc<dyn DocumentRepository>,
+    mut doc: Document,
+    err: AppError,
+) -> AppError {
+    doc.status = DocumentStatus::Failed;
+    doc.error = Some(err.to_string());
+    doc.updated_at = Utc::now();
+    let _ = documents.update(doc).await;
+    err
+}
 
 /// Extract → chunk → embed → store, updating `doc`'s status as it goes so a
 /// caller re-reading the row mid-flight (or after a crash) sees where it got
 /// to. On failure the document is left in `Failed` with `error` set, never
 /// silently half-ingested.
+#[allow(clippy::too_many_arguments)]
 pub async fn ingest_pdf(
     engine: &RagEngine,
     documents: &Arc<dyn DocumentRepository>,
     chunks_repo: &Arc<dyn ChunkRepository>,
     mut doc: Document,
     pdf_bytes: &[u8],
-) -> AppResult<(Document, u32)> {
-    async fn fail(
-        documents: &Arc<dyn DocumentRepository>,
-        mut doc: Document,
-        err: AppError,
-    ) -> AppError {
-        doc.status = DocumentStatus::Failed;
-        doc.error = Some(err.to_string());
-        doc.updated_at = Utc::now();
-        let _ = documents.update(doc).await;
-        err
-    }
-
+    redact_pii: bool,
+) -> AppResult<(Document, u32, usize)> {
     doc.status = DocumentStatus::Chunking;
     doc.updated_at = Utc::now();
     documents.update(doc.clone()).await?;
@@ -51,7 +53,7 @@ pub async fn ingest_pdf(
         Ok(t) => t,
         Err(e) => return Err(fail(documents, doc, e).await),
     };
-    doc.pages = text_result.pages.len() as u32;
+    let pages = text_result.pages.len() as u32;
 
     let full_text = text_result
         .pages
@@ -68,7 +70,44 @@ pub async fn ingest_pdf(
         return Err(fail(documents, doc, err).await);
     }
 
-    let spans = chunk_text(&full_text, engine.chunk_size, engine.chunk_overlap);
+    ingest_text(engine, documents, chunks_repo, doc, &full_text, pages, redact_pii).await
+}
+
+/// Same pipeline as [`ingest_pdf`] from the point text is already in hand —
+/// chunk → embed → store. Used directly by anything that isn't a PDF (e.g.
+/// [`super::erp_sync`]'s ERP/CRM records), so a non-file knowledge source
+/// gets identical chunking/embedding/status-tracking behavior for free
+/// instead of a parallel, drifting implementation.
+///
+/// `redact_pii`: opt-in, best-effort [`pii::redact`] pass over the *whole*
+/// text before it's chunked — so recognised PII (emails, IBANs, IDs, cards,
+/// phone numbers) never reaches the embeddings/chat model and never lands in
+/// Qdrant or `chunks.text`. Off by default: redaction is lossy, and a caller
+/// who needs to ask "what's this customer's phone number?" later needs that
+/// value still there.
+#[allow(clippy::too_many_arguments)]
+pub async fn ingest_text(
+    engine: &RagEngine,
+    documents: &Arc<dyn DocumentRepository>,
+    chunks_repo: &Arc<dyn ChunkRepository>,
+    mut doc: Document,
+    full_text: &str,
+    pages: u32,
+    redact_pii: bool,
+) -> AppResult<(Document, u32, usize)> {
+    doc.pages = pages;
+    doc.status = DocumentStatus::Chunking;
+    doc.updated_at = Utc::now();
+    documents.update(doc.clone()).await?;
+
+    let (redacted_text, redacted_count) = if redact_pii {
+        pii::redact(full_text)
+    } else {
+        (full_text.to_string(), 0)
+    };
+    let full_text = redacted_text.as_str();
+
+    let spans = chunk_text(full_text, engine.chunk_size, engine.chunk_overlap);
     if spans.is_empty() {
         let err = AppError::Internal(anyhow::anyhow!(
             "chunker produced no spans for non-empty text"
@@ -109,7 +148,7 @@ pub async fn ingest_pdf(
     doc.error = None;
     doc.updated_at = Utc::now();
     documents.update(doc.clone()).await?;
-    Ok((doc, tokens_used.unwrap_or(0)))
+    Ok((doc, tokens_used.unwrap_or(0), redacted_count))
 }
 
 pub struct SourceOut {

@@ -12,7 +12,8 @@ use tower_http::{
 };
 
 use super::handlers::{
-    api_clients, auth, dashboard, ext_auth, jobs_admin, meta, permissions, rag, roles, users,
+    api_clients, auth, chat, dashboard, ext_auth, jobs_admin, meta, permissions, rag, roles,
+    users,
 };
 use super::middleware::security;
 use super::openapi::ApiDoc;
@@ -64,6 +65,15 @@ pub fn build(state: Arc<AppState>) -> Router {
             get(rag::detail).delete(rag::delete),
         )
         .route("/api/rag/query", post(rag::query))
+        .route("/api/rag/sync/erp", post(rag::sync_erp))
+        // Chat — persisted threads around /api/rag/query (no LLM memory, see
+        // application::chat::service). Same auth/scopes as the RAG routes.
+        .route("/api/chat/threads", get(chat::list).post(chat::create))
+        .route(
+            "/api/chat/threads/:id",
+            get(chat::detail).patch(chat::rename).delete(chat::delete),
+        )
+        .route("/api/chat/threads/:id/messages", post(chat::ask))
         // Admin UI auth (session cookie)
         .route("/api/v1/config", get(meta::config))
         .route("/api/v1/csrf/", get(meta::csrf))

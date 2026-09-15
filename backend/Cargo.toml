@@ -58,6 +58,9 @@ base64 = "0.22"
 # PDF text extraction feeding ingestion.
 lopdf = "0.45"
 
+# Best-effort PII redaction at ingest time (opt-in).
+regex = "1"
+
 [dev-dependencies]
 tower           = { version = "0.5", features = ["util"] }
 http-body-util  = "0.1"

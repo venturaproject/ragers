@@ -94,6 +94,7 @@ impl Modify for SecurityAddon {
         crate::infrastructure::http::handlers::rag::detail,
         crate::infrastructure::http::handlers::rag::delete,
         crate::infrastructure::http::handlers::rag::query,
+        crate::infrastructure::http::handlers::rag::sync_erp,
         crate::infrastructure::http::handlers::ext_auth::token,
         crate::infrastructure::http::handlers::ext_auth::refresh,
     ),
@@ -101,6 +102,8 @@ impl Modify for SecurityAddon {
         UploadForm, RagQueryBody, TokenBody, RefreshBody,
         crate::infrastructure::http::handlers::rag::QueryResult,
         crate::infrastructure::http::handlers::rag::QuerySource,
+        crate::infrastructure::http::handlers::rag::ErpSyncResult,
+        crate::infrastructure::http::handlers::rag::ErpSyncItem,
     )),
     tags(
         (name = "rag", description = "Ingest documents and ask grounded questions over them"),
