@@ -13,7 +13,7 @@ use tower_http::{
 
 use super::handlers::{
     api_clients, auth, chat, dashboard, ext_auth, jobs_admin, meta, permissions, rag, roles,
-    users,
+    search, users, webhooks,
 };
 use super::middleware::security;
 use super::openapi::ApiDoc;
@@ -74,6 +74,10 @@ pub fn build(state: Arc<AppState>) -> Router {
             get(chat::detail).patch(chat::rename).delete(chat::delete),
         )
         .route("/api/chat/threads/:id/messages", post(chat::ask))
+        // Concurrent webhook fan-out — no LLM involved.
+        .route("/api/webhooks/dispatch", post(webhooks::dispatch))
+        // BM25 keyword search over ingested chunks — no LLM involved.
+        .route("/api/search", get(search::search))
         // Admin UI auth (session cookie)
         .route("/api/v1/config", get(meta::config))
         .route("/api/v1/csrf/", get(meta::csrf))

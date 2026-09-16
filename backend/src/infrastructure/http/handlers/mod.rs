@@ -9,4 +9,6 @@ pub mod permissions;
 pub mod process_common;
 pub mod rag;
 pub mod roles;
+pub mod search;
 pub mod users;
+pub mod webhooks;

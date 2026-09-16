@@ -61,6 +61,13 @@ lopdf = "0.45"
 # Best-effort PII redaction at ingest time (opt-in).
 regex = "1"
 
+# Concurrent fan-out for the webhook dispatcher.
+futures = "0.3"
+
+# Embedded BM25 full-text index over ingested chunks — no external service,
+# runs in-process alongside the Qdrant vector index.
+tantivy = "0.22"
+
 [dev-dependencies]
 tower           = { version = "0.5", features = ["util"] }
 http-body-util  = "0.1"

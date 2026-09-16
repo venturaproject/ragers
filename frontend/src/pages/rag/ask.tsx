@@ -201,7 +201,7 @@ export default function AskPage() {
     setDraftMessages((prev) => [...prev, optimisticUser])
 
     ask.mutate(question, {
-      onSuccess: ({ threadId, result }) => {
+      onSuccess: ({ threadId }) => {
         queryClient.invalidateQueries({ queryKey: ['chat-threads'] })
         queryClient.invalidateQueries({ queryKey: ['chat-thread', threadId] })
         setDraftMessages([])

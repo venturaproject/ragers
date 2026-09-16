@@ -164,7 +164,10 @@ pub async fn build_state_async(config: Config) -> anyhow::Result<Arc<AppState>> 
 
     let Some(url) = config.database_url.clone() else {
         let stores = memory_stores(&config);
-        return Ok(assemble_state(config, stores, redis, rag, erp_pool));
+        let state = assemble_state(config, stores, redis, rag, erp_pool);
+        crate::application::search::warm_from_repositories(&state.search, &state.documents, &state.chunks)
+            .await;
+        return Ok(state);
     };
 
     let pool = postgres::connect(&url).await?;
@@ -198,7 +201,10 @@ pub async fn build_state_async(config: Config) -> anyhow::Result<Arc<AppState>> 
         db_pool: Some(pool),
     };
     tracing::info!("persistence: Postgres");
-    Ok(assemble_state(config, stores, redis, rag, erp_pool))
+    let state = assemble_state(config, stores, redis, rag, erp_pool);
+    crate::application::search::warm_from_repositories(&state.search, &state.documents, &state.chunks)
+        .await;
+    Ok(state)
 }
 
 /// Everything downstream of the swappable repos: the services and the rate
@@ -249,6 +255,11 @@ fn assemble_state(
         db_pool: stores.db_pool,
         rag,
         erp_pool,
+        webhook_client: reqwest::Client::builder()
+            .user_agent("rag-api-webhooks/1")
+            .build()
+            .expect("building the webhook client"),
+        search: crate::application::search::SearchIndex::new().expect("building the search index"),
     })
 }
 

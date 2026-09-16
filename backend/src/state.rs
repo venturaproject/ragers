@@ -3,6 +3,7 @@ use std::sync::Arc;
 use crate::{
     application::{
         api_client::service::ApiClientService, auth::service::AuthService, rag::RagEngine,
+        search::SearchIndex,
     },
     config::Config,
     domain::{
@@ -43,4 +44,11 @@ pub struct AppState {
     /// `None` when `ERP_DATABASE_URL` is unset or unreachable at startup:
     /// the sync route then answers 503, same convention as `rag`.
     pub erp_pool: Option<sqlx::PgPool>,
+    /// Shared client for `POST /api/webhooks/dispatch` — one connection pool
+    /// reused across calls rather than built per-request.
+    pub webhook_client: reqwest::Client,
+    /// Embedded BM25 full-text index over ingested chunks. Always present —
+    /// unlike `rag`, it needs no `LLM_API_KEY`/Qdrant, just the chunk text
+    /// already sitting in `chunks`.
+    pub search: SearchIndex,
 }

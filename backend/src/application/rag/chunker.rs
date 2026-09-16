@@ -18,7 +18,7 @@ pub struct ChunkSpan {
 /// so the window always makes forward progress.
 pub fn chunk_text(text: &str, size: usize, overlap: usize) -> Vec<ChunkSpan> {
     let size = size.max(1);
-    let overlap = overlap.min(size.saturating_sub(1).max(0));
+    let overlap = overlap.min(size.saturating_sub(1));
     let chars: Vec<char> = text.chars().collect();
     if chars.is_empty() {
         return Vec::new();

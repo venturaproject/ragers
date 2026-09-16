@@ -27,6 +27,7 @@ import {
   FileText,
   Loader2,
   RefreshCw,
+  Search,
   ShieldCheck,
   Trash2,
   Upload,
@@ -34,7 +35,9 @@ import {
 } from 'lucide-react'
 import { FileDropzone } from '@/components/file-dropzone'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
 import { ragApi, type DocumentStatus, type RagDocument } from '@/services/rag-api'
+import { searchApi } from '@/services/search-api'
 import { toast } from 'sonner'
 
 const STATUS_META: Record<
@@ -92,6 +95,8 @@ export default function DocumentsPage() {
   const [files, setFiles] = useState<File[]>([])
   const [redactPii, setRedactPii] = useState(false)
   const [redactPiiErp, setRedactPiiErp] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [activeSearch, setActiveSearch] = useState('')
   const queryClient = useQueryClient()
 
   const listQuery = useQuery({
@@ -144,6 +149,13 @@ export default function DocumentsPage() {
   })
 
   const docs: RagDocument[] = listQuery.data ?? []
+  const docsById = new Map(docs.map((d) => [d.id, d]))
+
+  const searchResults = useQuery({
+    queryKey: ['search', activeSearch],
+    queryFn: () => searchApi.search(activeSearch),
+    enabled: activeSearch.length > 0,
+  })
 
   return (
     <AuthenticatedLayout title="Documentos">
@@ -158,9 +170,65 @@ export default function DocumentsPage() {
               Sube un PDF para indexarlo: se extrae el texto, se trocea, se generan embeddings y
               se guarda en Qdrant. Requiere <code>LLM_API_KEY</code> configurada en el servidor.
               Luego pregúntale en{' '}
-              <a href="/admin/rag/ask" className="underline underline-offset-2">Preguntar</a>.
+              <a href="/admin/rag/ask" className="underline underline-offset-2">Chat RAG</a>.
             </p>
           </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Search className="h-4 w-4 text-primary" />
+                Búsqueda por palabra clave (BM25)
+              </CardTitle>
+              <CardDescription>
+                Coincidencia exacta sobre el texto ya indexado — no pasa por el LLM, funciona
+                aunque no haya <code>LLM_API_KEY</code>. Para respuestas con lenguaje natural usá{' '}
+                <a href="/admin/rag/ask" className="underline underline-offset-2">Chat RAG</a>.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex gap-2">
+                <Input
+                  placeholder="ej: OFC-1001, Mayor S.A., pedido #3…"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && setActiveSearch(searchQuery.trim())}
+                />
+                <Button
+                  variant="outline"
+                  onClick={() => setActiveSearch(searchQuery.trim())}
+                  disabled={!searchQuery.trim()}
+                >
+                  Buscar
+                </Button>
+              </div>
+              {searchResults.isFetching && (
+                <p className="text-xs text-muted-foreground">Buscando…</p>
+              )}
+              {searchResults.data && (
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">
+                    {searchResults.data.length} resultado(s)
+                  </p>
+                  {searchResults.data.map((hit) => (
+                    <div
+                      key={`${hit.document_id}-${hit.chunk_index}`}
+                      className="rounded-md border p-3 text-sm"
+                    >
+                      <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
+                        <span className="font-medium text-foreground">
+                          {docsById.get(hit.document_id)?.filename ?? hit.document_id.slice(0, 8)}
+                        </span>
+                        <span>chunk {hit.chunk_index}</span>
+                        <span className="ml-auto tabular-nums">score {hit.score.toFixed(2)}</span>
+                      </div>
+                      <p className="line-clamp-3 text-muted-foreground">{hit.text}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           <Card>
             <CardContent className="space-y-4 pt-6">

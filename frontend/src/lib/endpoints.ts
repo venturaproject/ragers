@@ -65,4 +65,5 @@ export const endpoints = {
     threadDetail:  (id: string) => `/api/chat/threads/${id}`,
     messages:      (id: string) => `/api/chat/threads/${id}/messages`,
   },
+  search: `/api/search`,
 }

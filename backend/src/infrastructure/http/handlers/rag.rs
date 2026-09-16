@@ -28,6 +28,19 @@ use crate::{
 
 /// Fetch a document the caller is allowed to see, or a 404 that doesn't
 /// confirm the id exists for another tenant — same convention as jobs.
+/// Best-effort: re-read the chunks that were just stored and hand them to
+/// the full-text index. A failure here never fails the ingest response —
+/// the chunk text is already durable in `chunks`/Qdrant either way.
+async fn index_for_search(state: &AppState, doc: &Document) {
+    let Ok(chunks) = state.chunks.list_for_document(doc.id).await else {
+        return;
+    };
+    for chunk in &chunks {
+        let _ = state.search.index_chunk(doc.owner.as_deref(), doc.id, chunk).await;
+    }
+    let _ = state.search.commit().await;
+}
+
 async fn owned_document(
     state: &AppState,
     principal: &ApiPrincipal,
@@ -113,6 +126,7 @@ pub async fn ingest(
     }
 
     let (doc, _tokens, redacted_count) = result?;
+    index_for_search(&state, &doc).await;
     let mut json = doc.to_json();
     json["pii_redacted"] = serde_json::json!(redacted_count);
     Ok(Json(json))
@@ -207,6 +221,8 @@ pub async fn delete(
     if let Some(engine) = state.rag.as_ref() {
         engine.vector_store.delete_document(id).await?;
     }
+    let _ = state.search.delete_document(id).await;
+    let _ = state.search.commit().await;
     state.chunks.delete_for_document(id).await?;
     state.documents.delete(id).await?;
     Ok(axum::http::StatusCode::NO_CONTENT)
@@ -401,6 +417,7 @@ pub async fn sync_erp(
     for record in records {
         if let Some(&old_id) = existing_by_title.get(&record.title) {
             engine.vector_store.delete_document(old_id).await?;
+            let _ = state.search.delete_document(old_id).await;
             state.chunks.delete_for_document(old_id).await?;
             state.documents.delete(old_id).await?;
         }
@@ -430,10 +447,11 @@ pub async fn sync_erp(
         trace_sync(&state, record.title.clone(), "rag_erp_sync", &principal, outcome).await;
 
         match result {
-            Ok((_, _, redacted)) => {
+            Ok((ref doc, _, redacted)) => {
                 ingested += 1;
                 total_tokens += tokens as u64;
                 total_redacted += redacted as u64;
+                index_for_search(&state, doc).await;
                 items.push(ErpSyncItem {
                     title: record.title,
                     status: "ready".into(),

@@ -47,6 +47,16 @@ pub struct RefreshBody {
     pub refresh_token: String,
 }
 
+/// JSON body for `POST /api/webhooks/dispatch`.
+#[derive(utoipa::ToSchema)]
+#[allow(dead_code)]
+pub struct WebhookDispatchBody {
+    pub targets: Vec<String>,
+    pub payload: serde_json::Value,
+    pub timeout_secs: Option<u64>,
+    pub max_retries: Option<u32>,
+}
+
 struct SecurityAddon;
 
 impl Modify for SecurityAddon {
@@ -97,17 +107,20 @@ impl Modify for SecurityAddon {
         crate::infrastructure::http::handlers::rag::sync_erp,
         crate::infrastructure::http::handlers::ext_auth::token,
         crate::infrastructure::http::handlers::ext_auth::refresh,
+        crate::infrastructure::http::handlers::webhooks::dispatch,
     ),
     components(schemas(
-        UploadForm, RagQueryBody, TokenBody, RefreshBody,
+        UploadForm, RagQueryBody, TokenBody, RefreshBody, WebhookDispatchBody,
         crate::infrastructure::http::handlers::rag::QueryResult,
         crate::infrastructure::http::handlers::rag::QuerySource,
         crate::infrastructure::http::handlers::rag::ErpSyncResult,
         crate::infrastructure::http::handlers::rag::ErpSyncItem,
+        crate::application::webhooks::service::DispatchResult,
     )),
     tags(
         (name = "rag", description = "Ingest documents and ask grounded questions over them"),
         (name = "auth", description = "OAuth2 client-credentials for external clients"),
+        (name = "webhooks", description = "Concurrent webhook fan-out — no LLM involved"),
     ),
     modifiers(&SecurityAddon),
 )]
