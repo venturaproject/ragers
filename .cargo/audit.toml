@@ -1,0 +1,6 @@
+[advisories]
+# RSA is only present through sqlx-mysql's optional MySQL feature. This project
+# enables sqlx's PostgreSQL feature only (verified with `cargo tree -i rsa`),
+# and RustSec has no fixed version for RUSTSEC-2023-0071. Keep this narrow,
+# documented exception until sqlx removes or fixes that optional dependency.
+ignore = ["RUSTSEC-2023-0071"]

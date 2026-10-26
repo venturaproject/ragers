@@ -128,7 +128,7 @@ impl SearchIndex {
         };
 
         let top_docs = searcher
-            .search(&query, &TopDocs::with_limit(limit))
+            .search(&query, &TopDocs::with_limit(limit).order_by_score())
             .map_err(map_err)?;
 
         let mut hits = Vec::with_capacity(top_docs.len());
