@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="doc/ragers-readme-banner.png" alt="Ragers — Enterprise RAG Boilerplate" width="100%">
+</p>
+
 # Ragers
 
 A Rust + React boilerplate for an operational, enterprise-grade RAG (Retrieval-
