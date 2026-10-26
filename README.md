@@ -46,17 +46,64 @@ embeddings, vector search, answer generation) was added in their place.
 
 ## Architecture
 
-```
-nginx → api (Rust/axum) ──┬─→ postgres   (users, sessions, RBAC, RAG metadata, chat threads)
-        frontend (Vite)   ├─→ redis      (rate limiters, optional)
-                           ├─→ qdrant     (vectors — the RAG index itself)
-                           └─→ erp-db     (a *separate* Postgres — stand-in for an external
-                                            ERP/CRM this API does not own)
+The browser talks to one public entry point. Nginx serves the React app and
+routes `/api` requests to the Rust API; data and inference services stay on the
+internal Compose network.
+
+```mermaid
+flowchart LR
+    Browser[Browser / Admin UI<br/>React + Vite] -->|HTTP| Nginx[Nginx<br/>single entry point]
+    Nginx -->|app assets| Frontend[Frontend container]
+    Nginx -->|/api/*| API[Backend API<br/>Rust + Axum]
+
+    API -->|users, sessions, RBAC,<br/>document metadata, chat| Postgres[(Postgres<br/>application data)]
+    API -. optional rate-limit state .-> Redis[(Redis)]
+    API -->|vectors + chunk payloads| Qdrant[(Qdrant<br/>vector index)]
+    API -->|BM25 full-text index| Tantivy[Tantivy<br/>in-process]
+    API -->|read-only source sync| ERP[(ERP / CRM<br/>separate Postgres)]
+    API -->|embeddings + answer generation| LLM[OpenAI-compatible<br/>LLM endpoint]
 ```
 
 `erp-db` is deliberately not the same database as `postgres`: it simulates
 pulling knowledge from a system the API doesn't control, the way a real ERP/CRM
 integration would look, rather than reusing the app's own persistence.
+
+### How the RAG flow works
+
+```mermaid
+flowchart TD
+    subgraph Ingest[Ingestion — PDF upload or ERP sync]
+        Source[PDF or ERP records] --> Redact{PII redaction<br/>requested?}
+        Redact -->|yes| Clean[Redact recognized PII]
+        Redact -->|no| Extract[Extract text]
+        Clean --> Extract
+        Extract --> Chunk[Split into overlapping chunks]
+        Chunk --> Embed[Create passage embeddings]
+        Embed --> Store[(Store vectors and chunk payloads in Qdrant)]
+        Extract --> Metadata[(Persist document metadata in Postgres)]
+    end
+
+    subgraph Ask[Question answering]
+        Question[Question + authorized client scope] --> QEmbed[Create query embedding]
+        QEmbed --> Retrieve[Retrieve top matching chunks<br/>from Qdrant, scoped by owner/documents]
+        Store -. indexed chunks .-> Retrieve
+        Retrieve --> Prompt[Build grounded prompt with cited sources]
+        Question --> Prompt
+        Prompt --> Generate[Generate answer]
+        Generate --> Reply[Answer with inline citations<br/>or no-source response]
+    end
+
+    Embed -->|embeddings API| LLM[OpenAI-compatible endpoint]
+    QEmbed -->|embeddings API| LLM
+    Generate -->|chat API| LLM
+```
+
+Every protected request is authorized by the API (session or API key, RBAC and
+OAuth scopes); retrieval also applies tenant/document filters. The admin chat
+stores thread history in Postgres for later viewing, but does not feed previous
+messages back into the model: each answer is grounded independently in the
+retrieved indexed content. Tantivy provides the separate in-process BM25
+full-text search index; Qdrant is the vector store used by RAG retrieval.
 
 ## Quick start (dev)
 
