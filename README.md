@@ -19,6 +19,7 @@ embeddings, vector search, answer generation) was added in their place.
 
 - [Features](#features)
 - [Architecture](#architecture)
+- [Architecture and design notes](#architecture-and-design-notes)
 - [Quick start (dev)](#quick-start-dev)
 - [Configuration](#configuration)
 - [RAG API](#rag-api)
@@ -108,6 +109,9 @@ stores thread history in Postgres for later viewing, but does not feed previous
 messages back into the model: each answer is grounded independently in the
 retrieved indexed content. Tantivy provides the separate in-process BM25
 full-text search index; Qdrant is the vector store used by RAG retrieval.
+
+For the backend's layers, repository ports, startup wiring, and key design
+trade-offs, see [Architecture and design notes](doc/architecture-and-design.md).
 
 ## Quick start (dev)
 
