@@ -75,7 +75,12 @@ impl SearchIndex {
 
     /// Queue a chunk for indexing — call [`Self::commit`] afterward (once
     /// per batch, not per chunk) to make it visible to searches.
-    pub async fn index_chunk(&self, owner: Option<&str>, document_id: Uuid, chunk: &Chunk) -> AppResult<()> {
+    pub async fn index_chunk(
+        &self,
+        owner: Option<&str>,
+        document_id: Uuid,
+        chunk: &Chunk,
+    ) -> AppResult<()> {
         let mut doc = TantivyDocument::default();
         doc.add_text(self.f_document_id, document_id.to_string());
         if let Some(o) = owner {
@@ -109,7 +114,12 @@ impl SearchIndex {
     /// BM25 search, optionally scoped to `owner` — same multi-tenant
     /// convention as the vector store (`None` = every tenant, for
     /// privileged callers only; the HTTP handler decides which).
-    pub fn search(&self, owner: Option<&str>, query_str: &str, limit: usize) -> AppResult<Vec<SearchHit>> {
+    pub fn search(
+        &self,
+        owner: Option<&str>,
+        query_str: &str,
+        limit: usize,
+    ) -> AppResult<Vec<SearchHit>> {
         let searcher = self.reader.searcher();
         let parser = QueryParser::for_index(&self.index, vec![self.f_text]);
         let text_query = parser.parse_query(query_str).map_err(map_err)?;
@@ -138,7 +148,9 @@ impl SearchIndex {
                 .get_first(self.f_document_id)
                 .and_then(|v| v.as_str())
                 .and_then(|s| Uuid::parse_str(s).ok())
-                .ok_or_else(|| AppError::Internal(anyhow::anyhow!("search hit missing document_id")))?;
+                .ok_or_else(|| {
+                    AppError::Internal(anyhow::anyhow!("search hit missing document_id"))
+                })?;
             let chunk_index = doc
                 .get_first(self.f_chunk_index)
                 .and_then(|v| v.as_u64())
@@ -180,7 +192,10 @@ pub async fn warm_from_repositories(
         let doc_chunks = match chunks.list_for_document(doc.id).await {
             Ok(c) => c,
             Err(e) => {
-                tracing::warn!("search index warm-up: couldn't list chunks for {}: {e}", doc.id);
+                tracing::warn!(
+                    "search index warm-up: couldn't list chunks for {}: {e}",
+                    doc.id
+                );
                 continue;
             }
         };
@@ -198,7 +213,10 @@ pub async fn warm_from_repositories(
         tracing::warn!("search index warm-up: commit failed: {e}");
         return;
     }
-    tracing::info!("search index: warmed up with {indexed} chunk(s) from {} document(s)", docs.len());
+    tracing::info!(
+        "search index: warmed up with {indexed} chunk(s) from {} document(s)",
+        docs.len()
+    );
 }
 
 #[cfg(test)]
@@ -215,7 +233,11 @@ mod tests {
         let search = SearchIndex::new().unwrap();
         let doc_id = Uuid::new_v4();
         search
-            .index_chunk(Some("owner-a"), doc_id, &chunk(0, "Mayor S.A. esta en Alcobendas"))
+            .index_chunk(
+                Some("owner-a"),
+                doc_id,
+                &chunk(0, "Mayor S.A. esta en Alcobendas"),
+            )
             .await
             .unwrap();
         search.commit().await.unwrap();
@@ -229,16 +251,27 @@ mod tests {
     async fn scopes_results_by_owner() {
         let search = SearchIndex::new().unwrap();
         search
-            .index_chunk(Some("owner-a"), Uuid::new_v4(), &chunk(0, "factura numero uno"))
+            .index_chunk(
+                Some("owner-a"),
+                Uuid::new_v4(),
+                &chunk(0, "factura numero uno"),
+            )
             .await
             .unwrap();
         search
-            .index_chunk(Some("owner-b"), Uuid::new_v4(), &chunk(0, "factura numero dos"))
+            .index_chunk(
+                Some("owner-b"),
+                Uuid::new_v4(),
+                &chunk(0, "factura numero dos"),
+            )
             .await
             .unwrap();
         search.commit().await.unwrap();
 
-        assert_eq!(search.search(Some("owner-a"), "factura", 10).unwrap().len(), 1);
+        assert_eq!(
+            search.search(Some("owner-a"), "factura", 10).unwrap().len(),
+            1
+        );
         assert_eq!(search.search(None, "factura", 10).unwrap().len(), 2);
     }
 
@@ -246,14 +279,26 @@ mod tests {
     async fn delete_document_removes_all_its_chunks() {
         let search = SearchIndex::new().unwrap();
         let doc_id = Uuid::new_v4();
-        search.index_chunk(None, doc_id, &chunk(0, "primero")).await.unwrap();
-        search.index_chunk(None, doc_id, &chunk(1, "segundo")).await.unwrap();
+        search
+            .index_chunk(None, doc_id, &chunk(0, "primero"))
+            .await
+            .unwrap();
+        search
+            .index_chunk(None, doc_id, &chunk(1, "segundo"))
+            .await
+            .unwrap();
         search.commit().await.unwrap();
-        assert_eq!(search.search(None, "primero OR segundo", 10).unwrap().len(), 2);
+        assert_eq!(
+            search.search(None, "primero OR segundo", 10).unwrap().len(),
+            2
+        );
 
         search.delete_document(doc_id).await.unwrap();
         search.commit().await.unwrap();
 
-        assert_eq!(search.search(None, "primero OR segundo", 10).unwrap().len(), 0);
+        assert_eq!(
+            search.search(None, "primero OR segundo", 10).unwrap().len(),
+            0
+        );
     }
 }

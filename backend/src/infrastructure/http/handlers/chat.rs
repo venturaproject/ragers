@@ -204,7 +204,14 @@ pub async fn ask(
         }
         Err(e) => (Err((e.to_string(), started.elapsed().as_millis())), 0),
     };
-    trace_sync(&state, body.question.clone(), "chat_ask", &principal, outcome).await;
+    trace_sync(
+        &state,
+        body.question.clone(),
+        "chat_ask",
+        &principal,
+        outcome,
+    )
+    .await;
     if tokens > 0 {
         record_ai_usage(&state, &principal, tokens as u64).await;
     }

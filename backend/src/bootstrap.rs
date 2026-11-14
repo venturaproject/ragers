@@ -145,7 +145,9 @@ async fn connect_erp(url: Option<&str>) -> Option<sqlx::PgPool> {
             Some(pool)
         }
         Err(e) => {
-            tracing::error!("ERP_DATABASE_URL is set but the connection failed ({e}) — /api/rag/sync/erp will answer 503");
+            tracing::error!(
+                "ERP_DATABASE_URL is set but the connection failed ({e}) — /api/rag/sync/erp will answer 503"
+            );
             None
         }
     }
@@ -165,8 +167,12 @@ pub async fn build_state_async(config: Config) -> anyhow::Result<Arc<AppState>> 
     let Some(url) = config.database_url.clone() else {
         let stores = memory_stores(&config);
         let state = assemble_state(config, stores, redis, rag, erp_pool);
-        crate::application::search::warm_from_repositories(&state.search, &state.documents, &state.chunks)
-            .await;
+        crate::application::search::warm_from_repositories(
+            &state.search,
+            &state.documents,
+            &state.chunks,
+        )
+        .await;
         return Ok(state);
     };
 
@@ -202,8 +208,12 @@ pub async fn build_state_async(config: Config) -> anyhow::Result<Arc<AppState>> 
     };
     tracing::info!("persistence: Postgres");
     let state = assemble_state(config, stores, redis, rag, erp_pool);
-    crate::application::search::warm_from_repositories(&state.search, &state.documents, &state.chunks)
-        .await;
+    crate::application::search::warm_from_repositories(
+        &state.search,
+        &state.documents,
+        &state.chunks,
+    )
+    .await;
     Ok(state)
 }
 

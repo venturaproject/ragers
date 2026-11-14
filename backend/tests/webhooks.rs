@@ -39,7 +39,9 @@ async fn rejects_an_empty_target_list() {
 #[tokio::test]
 async fn rejects_more_targets_than_the_limit() {
     let mut app = TestApp::new();
-    let too_many: Vec<String> = (0..300).map(|i| format!("https://example.com/{i}")).collect();
+    let too_many: Vec<String> = (0..300)
+        .map(|i| format!("https://example.com/{i}"))
+        .collect();
     let res = app
         .post_json_key(
             "/api/webhooks/dispatch",

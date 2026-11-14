@@ -70,7 +70,16 @@ pub async fn ingest_pdf(
         return Err(fail(documents, doc, err).await);
     }
 
-    ingest_text(engine, documents, chunks_repo, doc, &full_text, pages, redact_pii).await
+    ingest_text(
+        engine,
+        documents,
+        chunks_repo,
+        doc,
+        &full_text,
+        pages,
+        redact_pii,
+    )
+    .await
 }
 
 /// Same pipeline as [`ingest_pdf`] from the point text is already in hand —

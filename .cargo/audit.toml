@@ -1,6 +1,8 @@
 [advisories]
-# RSA is only present through sqlx-mysql's optional MySQL feature. This project
-# enables sqlx's PostgreSQL feature only (verified with `cargo tree -i rsa`),
-# and RustSec has no fixed version for RUSTSEC-2023-0071. Keep this narrow,
-# documented exception until sqlx removes or fixes that optional dependency.
-ignore = ["RUSTSEC-2023-0071"]
+# These advisories are only present through SQLx's optional MySQL/SQLite
+# drivers. This application enables PostgreSQL only (verified with
+# `cargo tree -i rsa` and `cargo tree -i libsqlite3-sys`). SQLx 0.8.6 pins
+# rsa to 0.9 and libsqlite3-sys to 0.30.x; neither patched version is allowed
+# by those constraints. Revisit if SQLx updates its optional driver bounds or
+# if the application enables either driver.
+ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2026-0459"]

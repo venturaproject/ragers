@@ -35,7 +35,11 @@ async fn create_list_rename_and_delete_a_thread() {
     let mut app = TestApp::new();
 
     let created = app
-        .post_json_key("/api/chat/threads", "test-key", json!({ "title": "Hilo 1" }))
+        .post_json_key(
+            "/api/chat/threads",
+            "test-key",
+            json!({ "title": "Hilo 1" }),
+        )
         .await;
     assert_eq!(created.status, StatusCode::OK);
     let id = created.json["id"].as_str().unwrap().to_string();

@@ -21,7 +21,9 @@ async fn search_works_without_llm_configuration() {
     // No LLM_API_KEY in the test harness — search must still respond (it's
     // plain keyword lookup over whatever's indexed, no LLM/Qdrant call).
     let mut app = TestApp::new();
-    let res = app.get_key("/api/search?q=nothing+indexed+yet", "test-key").await;
+    let res = app
+        .get_key("/api/search?q=nothing+indexed+yet", "test-key")
+        .await;
     assert_eq!(res.status, StatusCode::OK);
     assert_eq!(res.json["hits"].as_array().unwrap().len(), 0);
 }

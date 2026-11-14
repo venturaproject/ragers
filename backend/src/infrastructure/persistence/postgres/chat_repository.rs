@@ -66,19 +66,23 @@ impl ChatThreadRepository for PgChatThreadRepository {
 
     async fn list(&self, owner: Option<&str>) -> AppResult<Vec<ChatThread>> {
         let rows = match owner {
-            Some(o) => sqlx::query(
-                "SELECT id, owner, title, created_at, updated_at FROM chat_threads \
+            Some(o) => {
+                sqlx::query(
+                    "SELECT id, owner, title, created_at, updated_at FROM chat_threads \
                  WHERE owner = $1 ORDER BY updated_at DESC LIMIT 500",
-            )
-            .bind(o)
-            .fetch_all(&self.pool)
-            .await,
-            None => sqlx::query(
-                "SELECT id, owner, title, created_at, updated_at FROM chat_threads \
+                )
+                .bind(o)
+                .fetch_all(&self.pool)
+                .await
+            }
+            None => {
+                sqlx::query(
+                    "SELECT id, owner, title, created_at, updated_at FROM chat_threads \
                  ORDER BY updated_at DESC LIMIT 500",
-            )
-            .fetch_all(&self.pool)
-            .await,
+                )
+                .fetch_all(&self.pool)
+                .await
+            }
         }
         .map_err(map_err)?;
 

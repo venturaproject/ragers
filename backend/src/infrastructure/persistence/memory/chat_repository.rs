@@ -97,7 +97,10 @@ impl Default for MemoryChatMessageRepository {
 #[async_trait]
 impl ChatMessageRepository for MemoryChatMessageRepository {
     async fn create(&self, message: ChatMessage) -> AppResult<()> {
-        self.store.entry(message.thread_id).or_default().push(message);
+        self.store
+            .entry(message.thread_id)
+            .or_default()
+            .push(message);
         Ok(())
     }
 

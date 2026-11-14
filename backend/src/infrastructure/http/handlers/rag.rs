@@ -36,7 +36,10 @@ async fn index_for_search(state: &AppState, doc: &Document) {
         return;
     };
     for chunk in &chunks {
-        let _ = state.search.index_chunk(doc.owner.as_deref(), doc.id, chunk).await;
+        let _ = state
+            .search
+            .index_chunk(doc.owner.as_deref(), doc.id, chunk)
+            .await;
     }
     let _ = state.search.commit().await;
 }
@@ -395,14 +398,19 @@ pub async fn sync_erp(
     check_ai_quota(&state, &principal).await?;
 
     let mut records = crate::application::rag::erp_sync::fetch_products(erp_pool).await?;
-    if let Some(catalog) = crate::application::rag::erp_sync::fetch_catalog_summary(erp_pool).await? {
+    if let Some(catalog) =
+        crate::application::rag::erp_sync::fetch_catalog_summary(erp_pool).await?
+    {
         records.push(catalog);
     }
     records.extend(crate::application::rag::erp_sync::fetch_orders(erp_pool).await?);
 
     // Existing documents from a prior sync, keyed by filename, so a record
     // that was already ingested gets replaced rather than duplicated.
-    let existing = state.documents.list(principal.owner_key().as_deref()).await?;
+    let existing = state
+        .documents
+        .list(principal.owner_key().as_deref())
+        .await?;
     let existing_by_title: std::collections::HashMap<String, Uuid> = existing
         .into_iter()
         .map(|d| (d.filename.clone(), d.id))
@@ -444,7 +452,14 @@ pub async fn sync_erp(
             ),
             Err(e) => (Err((e.to_string(), started.elapsed().as_millis())), 0),
         };
-        trace_sync(&state, record.title.clone(), "rag_erp_sync", &principal, outcome).await;
+        trace_sync(
+            &state,
+            record.title.clone(),
+            "rag_erp_sync",
+            &principal,
+            outcome,
+        )
+        .await;
 
         match result {
             Ok((ref doc, _, redacted)) => {

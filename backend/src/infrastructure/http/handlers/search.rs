@@ -3,13 +3,18 @@
 
 use std::sync::Arc;
 
-use axum::{Json, extract::{Query, State}};
+use axum::{
+    Json,
+    extract::{Query, State},
+};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::{
     errors::AppResult,
-    infrastructure::http::{handlers::process_common::authorize, middleware::api_key::ApiPrincipal},
+    infrastructure::http::{
+        handlers::process_common::authorize, middleware::api_key::ApiPrincipal,
+    },
     state::AppState,
 };
 

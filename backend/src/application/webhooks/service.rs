@@ -71,7 +71,9 @@ fn reject_unsafe_target(url: &Url) -> Result<(), String> {
                     || v4.is_broadcast()
                     || v4.is_unspecified()
             }
-            IpAddr::V6(v6) => v6.is_loopback() || v6.is_unspecified() || (v6.segments()[0] & 0xfe00) == 0xfc00,
+            IpAddr::V6(v6) => {
+                v6.is_loopback() || v6.is_unspecified() || (v6.segments()[0] & 0xfe00) == 0xfc00
+            }
         };
         if blocked {
             return Err(format!("target address '{ip}' is not allowed"));
